@@ -1,11 +1,13 @@
 /*To do:
-Modularize inputs -- blue color, single color for edge detection, # dots, angle, etc...
-Function to analyse pixels / save key pixels separately (most inputs don't need to call this again)
 Animation -- scattering of the random dots in sine waves (back and forth), or left to right?
 Draw onto new canvas rather than onto new image (just do one less step?)
+Add wavy trails in the animation?
+Animation could pick x,xxx random key pixels each frame, and draw a noise trail behind. Oscillate the % of noise particles which are color vs. background color, so that it draws and re-draws like wind trails
+- For the above, may need to re-draw the edge pixels every once in a while (can do that randomly as well)
 Add loading lock on screen while image is processing
 Simplify old code (remove toggle input menu, old menu table, color palette functions, etc...)
-Implement angle functionality -- currently in reverse at some quadrants
+Fix angle functionality -- currently in reverse at some quadrants
+Add option for subtle color variation
 */
 
 var imageInput = document.getElementById('imageInput');
@@ -520,7 +522,9 @@ function drawPixels(){
         var x = keyPixelArray[i][0];
         var y = keyPixelArray[i][1];
 
-        for(var j=0; j<obj.randomDots; j++){
+        var currentNumDots = obj.randomDots * Math.random();
+
+        for(var j=0; j<currentNumDots; j++){
             newCtx.fillStyle = obj.noiseColor;
             newCtx.globalAlpha = obj.noiseOpacity/100;
             var currentShift = Math.pow(Math.random(),obj.power) * (obj.maxSmear/100 * actualWidth); 
