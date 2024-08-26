@@ -1,57 +1,35 @@
 /*To do:
-Animation -- scattering of the random dots in sine waves (back and forth), or left to right?
-Draw onto new canvas rather than onto new image (just do one less step?)
-Add wavy trails in the animation?
-Animation could pick x,xxx random key pixels each frame, and draw a noise trail behind. Oscillate the % of noise particles which are color vs. background color, so that it draws and re-draws like wind trails
-- For the above, may need to re-draw the edge pixels every once in a while (can do that randomly as well)
-Add loading lock on screen while image is processing
-Simplify old code (remove toggle input menu, old menu table, color palette functions, etc...)
+Add wavy wind trails into the animation?
 Fix angle functionality -- currently in reverse at some quadrants
 Add option for subtle color variation
+Add to GUI: animation speed, pixel size, color variation style, key pixels per frame
+Bound the color variation by master hue / range?
+Press i to randomize gui inputs
+Randomize the smear width -- too uniform currently
 */
+
+var canvas = document.getElementById("canvas");
+var ctx = canvas.getContext("2d");
+
+var animationSpeed;
+var animationRequest;
+var playAnimationToggle = false;
 
 var imageInput = document.getElementById('imageInput');
 var imageContainer = document.getElementById('imageContainer');
+
+var loadingScreen = document.getElementById("coverScreen");
+
 var pixelColors = document.getElementById('pixelColors');
 var newImageContainer = document.getElementById('newImageContainer');
 var originalImage;
-var clickXPosition;
-var clickYPosition;
-var visualizationChoiceMenu = document.getElementById('visualizationChoice');
-var visualizationChoice = visualizationChoiceMenu.value;
-var previousVisualizationChoice = visualizationChoice;
-var loadingScreen = document.getElementById("coverScreen");
-
-var redInput = document.getElementById('red');
-var greenInput = document.getElementById('green');
-var blueInput = document.getElementById('blue');
-var alphaInput = document.getElementById('alpha');
-
-var smearWidthInput = document.getElementById('smearWidth');
-var smearWidth = smearWidthInput.value;
-var chosenPixelInput = document.getElementById('chosenPixel');
-var chosenPixel = chosenPixelInput.value;
-
-var noiseProbabilityInput = document.getElementById('noiseProbability');
-var noiseProbability = noiseProbabilityInput.value;
-
-var noiseColorRangeInput = document.getElementById('noiseColorRange');
-var noiseColorRange = noiseColorRangeInput.value;
-var rgbColorRange = noiseColorRange/100 * 255;
-
-var dotSizeFactorInput = document.getElementById('dotSizeFactor');
-var dotSizeFactor = dotSizeFactorInput.value;
-
-var lightnessLevelInput = document.getElementById('lightnessLevel');
-var lightnessLevel = lightnessLevelInput.value;
-
-var saturationLevelInput = document.getElementById('saturationLevel');
-var saturationLevel = saturationLevelInput.value;
 
 var isImageLoaded = false;
 
-var redrawButton = document.getElementById('generate-button');
-redrawButton.addEventListener('click', refresh);
+var screenWidth = window.innerWidth; // get the width of the browser screen
+var maxImageWidth = (screenWidth*0.96) / 2; // max width for each of the two images
+var maxImageHeight = window.innerHeight * 0.78;
+console.log("max image dimensions: "+maxImageWidth+", "+maxImageHeight);
 
 var actualWidth;
 var actualHeight;
@@ -65,242 +43,99 @@ var newCtx = newCanvas.getContext('2d');
 var pixelData;
 var pixels;
 
-var redShift = redInput.value;
-var greenShift = greenInput.value;
-var blueShift = blueInput.value;
-var alphaShift = alphaInput.value;
-
-var screenWidth = window.innerWidth; // get the width of the browser screen
-var maxImageWidth = (screenWidth*0.96) / 2; // max width for each of the two images
-var maxImageHeight = window.innerHeight * 0.78;
-console.log("max image dimensions: "+maxImageWidth+", "+maxImageHeight);
-
-//color pickers
-var paletteChoiceInput = document.getElementById('paletteChoice');
-var colorPicker = document.getElementById('color-picker');
-var colorPicker2 = document.getElementById('color-picker2');
-var colorPicker3 = document.getElementById('color-picker3');
-var colorPicker4 = document.getElementById('color-picker4');
-var colorPicker5 = document.getElementById('color-picker5');
-var colorPicker6 = document.getElementById('color-picker6');
-var pickers = [colorPicker, colorPicker2, colorPicker3, colorPicker4, colorPicker5, colorPicker6];
-
-var backgroundColorInput = document.getElementById('backgroundColorInput');
-var backgroundColor = backgroundColorInput.value;
-
-var palettePresets = [
-    {name: "mage", displayName: "Mage", palette: ["#0066A4","#640000","#006400","#FFC300","#FFFFFF","#000000"]},
-    {name: "viridis", displayName: "Viridis", palette: ["#fde725","#7ad151","#22a884","#2a788e","#414487","#440154"]},
-    {name: "analog", displayName: "Analog", palette: ["#d27575","#675a55","#529b9c","#9cba8f","#eac392","#FFFFFF"]},
-    {name: "inferno", displayName: "Inferno", palette: ["#fcffa4","#fca50a","#dd513a","#932667","#420a68","#000004"]},
-    {name: "vaporwave", displayName: "Vaporwave", palette: ["#D336BE","#E1A5EE","#05C3DD","#1E22AA","#D1EFED","#FFFFFF"]},
-    {name: "bohemian", displayName: "Bohemian", palette: ["#3F2021","#B04A5A","#BA5B3F","#CB9576","#7FA0AC","#EEE5D3"]},
-    {name: "earth", displayName: "Earth", palette: ["#8e412e","#ba6f4d","#e6cebc","#a2a182","#687259","#123524"]},
-    {name: "primary", displayName: "Primary", palette: ["#c90000","#fff400","#0004ff","#ffffff","#ffffff","#000000"]},
-    {name: "custom", displayName: "Custom >>", palette: ["#FFFFFF","#DDDDDD","#BBBBBB","#000000","#000000","#000000"]}
-];
-
-var chosenPalette = palettePresets[0].palette;
-
-//set as equal to mage palette upon first load, in RGB space
-var chosenPaletteRGBValues = [
-    [0, 102, 164],
-    [100, 0, 0],
-    [0, 100, 0],
-    [255, 195, 0],
-    [255, 255, 255],
-    [0, 0, 0]
-];
-
-//fill the paletteChoice HTML element dynamically
-palettePresets.forEach((preset) => {
-    const option = document.createElement('option');
-    option.value = preset.name;
-    option.text = preset.displayName;
-    paletteChoiceInput.appendChild(option);
-});
-
-var paletteChoice = paletteChoiceInput.value;
-
-//dual color picker
-var dualColorPicker1 = document.getElementById('dualColorInput1');
-var dualColorPicker2 = document.getElementById('dualColorInput2');
-
-var dualColor1 = dualColorPicker1.value;
-var dualColor2 = dualColorPicker2.value;
-
-var drawImageCounter = 0;
-var gridLoadCounter = 0;
-var ringsLoadCounter = 0;
-var frontierLoadCounter = 0;
-var eclipseLoadCounter = 0;
-
-//Save and export the new image in png format
-var saveButton = document.getElementById('save-image-button');
-
-saveButton.addEventListener('click', () => {
-    saveImage();
-});
-
-
 var keyPixelArray = [];
+
+//detect user browser
+var ua = navigator.userAgent;
+var isSafari = false;
+var isFirefox = false;
+var isIOS = false;
+var isAndroid = false;
+if(ua.includes("Safari")){
+    isSafari = true;
+}
+if(ua.includes("Firefox")){
+    isFirefox = true;
+}
+if(ua.includes("iPhone") || ua.includes("iPad") || ua.includes("iPod")){
+    isIOS = true;
+}
+if(ua.includes("Android")){
+    isAndroid = true;
+}
+console.log("isSafari: "+isSafari+", isFirefox: "+isFirefox+", isIOS: "+isIOS+", isAndroid: "+isAndroid);
+
+var mediaRecorder;
+var recordedChunks;
+var finishedBlob;
+var recordingMessageDiv = document.getElementById("videoRecordingMessageDiv");
+var recordVideoState = false;
+var videoRecordInterval;
+var videoEncoder;
+var muxer;
+var mobileRecorder;
+var videofps = 30;
 
 //add gui
 var obj = {
-    backgroundColor: "#fff9eb",
+    backgroundColor: "#000000",
     noiseColor: "#0011FF",
-    edgeColor: "#000000",
-    edgeSensitivity: 70,
-    maxSmear: 30,
-    randomDots: 50,
-    noiseOpacity: 30,
-    power: 35,
+    edgeColor: "#ffffff",
+    edgeSensitivity: 75,
+    maxSmear: 35,
+    randomDots: 60,
+    noiseOpacity: 40,
+    power: 25,
     angle: 0,
 };
 
+var xSlope;
+var ySlope;
+
 var gui = new dat.gui.GUI( { autoPlace: false } );
-gui.close();
-var guiOpenToggle = false;
+//gui.close();
+var guiOpenToggle = true;
 
 obj['importImage'] = function () {
 imageInput.click();
 };
 gui.add(obj, 'importImage').name("Import Image");
 
-gui.addColor(obj, "backgroundColor").name("Background Color").onFinishChange(drawPixels);
-gui.addColor(obj, "noiseColor").name("Noise Color").onFinishChange(drawPixels);
-gui.addColor(obj, "edgeColor").name("Edge Color").onFinishChange(drawPixels);
+gui.addColor(obj, "backgroundColor").name("Background Color")
+gui.addColor(obj, "noiseColor").name("Noise Color")
+gui.addColor(obj, "edgeColor").name("Edge Color")
 gui.add(obj, "edgeSensitivity").min(1).max(100).step(1).name('Edge Sensitivity').onFinishChange(analyseImage);
-gui.add(obj, "maxSmear").min(1).max(100).step(1).name('Smear Width').onFinishChange(drawPixels);
-gui.add(obj, "randomDots").min(1).max(100).step(1).name('# Random Dots').onFinishChange(drawPixels);
-gui.add(obj, "noiseOpacity").min(1).max(100).step(1).name('Dot Opacity').onFinishChange(drawPixels);
-gui.add(obj, "power").min(1).max(100).step(1).name('Cluster Power').onFinishChange(drawPixels);
-gui.add(obj, "angle").min(0).max(360).step(1).name('Angle').onFinishChange(drawPixels);
+gui.add(obj, "maxSmear").min(1).max(100).step(1).name('Smear Width')
+gui.add(obj, "randomDots").min(1).max(100).step(1).name('# Random Dots')
+gui.add(obj, "noiseOpacity").min(1).max(100).step(1).name('Dot Opacity')
+gui.add(obj, "power").min(1).max(100).step(1).name('Cluster Power')
+gui.add(obj, "angle").min(0).max(360).step(1).name('Angle')
+
+obj['playAnimation'] = function () {
+    pausePlayAnimation();
+};
+gui.add(obj, 'playAnimation').name("Play/Pause Animation (p)");
 
 obj['refreshCanvas'] = function () {
-refresh();
+    refreshCanvas();
 };
 gui.add(obj, 'refreshCanvas').name("Refresh Canvas (r)");
 
 obj['saveImage'] = function () {
 saveImage();
 };
-gui.add(obj, 'saveImage').name("Image Export (i)");
+gui.add(obj, 'saveImage').name("Save Image (s)");
 
 obj['saveVideo'] = function () {
 toggleVideoRecord();
 };
-gui.add(obj, 'saveVideo').name("Start/Stop Video Export (v)");
+gui.add(obj, 'saveVideo').name("Video Export (v)");
 
 customContainer = document.getElementById( 'gui' );
 customContainer.appendChild(gui.domElement);
 
 // Add event listeners to the input boxes
 imageInput.addEventListener('change', readSourceImage);
-
-visualizationChoiceMenu.addEventListener('change',refresh);
-redInput.addEventListener('change', refresh);
-greenInput.addEventListener('change', refresh);
-blueInput.addEventListener('change', refresh);
-alphaInput.addEventListener('change', refresh);
-smearWidthInput.addEventListener('change', refresh);
-chosenPixelInput.addEventListener('change', refresh);
-noiseProbabilityInput.addEventListener('change', refresh);
-noiseColorRangeInput.addEventListener('change', refresh);
-dotSizeFactorInput.addEventListener('change', refresh);
-
-paletteChoiceInput.addEventListener('change', changePalette);
-dualColorPicker1.addEventListener('change', refresh);
-dualColorPicker2.addEventListener('change', refresh);
-lightnessLevelInput.addEventListener('change', refresh);
-saturationLevelInput.addEventListener('change', refresh);
-
-//main method
-getUserInputs();
-initColorPickers();
-
-// Grab new user inputs from control menu
-function getUserInputs() {
-
-    visualizationChoice = String(visualizationChoiceMenu.value);
-
-    redShift = parseInt(redInput.value);
-    greenShift = parseInt(greenInput.value);
-    blueShift = parseInt(blueInput.value);
-    alphaShift = parseFloat(alphaInput.value);
-
-    smearWidth = Math.min(100,Math.max(0,Number(smearWidthInput.value)));
-    chosenPixel = Math.min(100,Math.max(0,Number(chosenPixelInput.value)));
-    noiseProbability = Math.min(100,Math.max(0,Number(noiseProbabilityInput.value)));
-    noiseColorRange = Math.min(100,Math.max(0,Number(noiseColorRangeInput.value)));
-    dotSizeFactor = Math.min(100,Math.max(0,Number(dotSizeFactorInput.value)));
-
-    rgbColorRange = noiseColorRange/100 * 255;
-
-    dualColor1 = dualColorPicker1.value;
-    dualColor2 = dualColorPicker2.value;
-
-    lightnessLevel = Math.min(100,Math.max(0,Number(lightnessLevelInput.value)));
-    saturationLevel = Math.min(100,Math.max(0,Number(saturationLevelInput.value)));
-
-    //set background color
-    if(visualizationChoice == previousVisualizationChoice){
-        backgroundColor = backgroundColorInput.value;
-    } else if(visualizationChoice == "eclipse"){
-        backgroundColorInput.value = "#000000";
-        backgroundColor = "#000000";
-    } else {
-        backgroundColorInput.value = "#FFF9EB";
-        backgroundColor = "#FFF9EB";
-    }
-
-    toggleInputMenu();
-}
-
-function toggleInputMenu(){
-
-    var numColumns = 12;
-
-    //columns: Style, RGBA shift, Smear, Sensitivity, Color Range, Max Dot Size, Palette, Color pickers, Background, dual color picker
-    //Value of 1 if the columnn should be shown for that style, 0 if hidden
-    var menuControlFlags = [
-        {menuOptions: [1,0,0,0,1,1,0,0,0,0,0,0], name: "pointillist"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,0,0,0], name: "sketch"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,0,0,0], name: "roller"},
-        {menuOptions: [1,0,0,1,0,0,1,1,0,0,0,0], name: "palletize"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,0,0,0], name: "pixel"},
-        {menuOptions: [1,0,0,1,0,0,0,0,1,0,0,0], name: "clippings"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,0,0,0], name: "grid"},
-        {menuOptions: [1,0,0,1,0,0,1,1,0,0,0,0], name: "mondrian"},
-        {menuOptions: [1,0,0,1,0,1,0,0,1,0,0,0], name: "rings"},
-        {menuOptions: [1,0,0,1,0,0,0,0,1,0,0,0], name: "gumball"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,0,0,0], name: "noisySort"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,0,0,0], name: "void"},
-        {menuOptions: [1,0,0,1,0,0,0,0,1,0,0,0], name: "braille"},
-        {menuOptions: [1,0,0,1,0,0,1,1,0,0,0,0], name: "dust"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,1,0,0], name: "outlines"},
-        {menuOptions: [1,0,0,1,0,0,0,0,1,0,0,0], name: "frontier"},
-        {menuOptions: [1,0,0,1,0,0,0,0,1,0,0,0], name: "eclipse"},
-        {menuOptions: [1,0,0,0,0,0,0,0,1,0,1,1], name: "satLight"},
-        {menuOptions: [1,0,0,1,0,0,0,0,1,1,0,0], name: "edgy"},
-        {menuOptions: [1,0,0,1,0,0,0,0,0,0,0,0], name: "shadow"},
-    ];
-
-    var styleIndex = menuControlFlags.findIndex(obj => obj.name == visualizationChoice);
-
-    for(var idx=0; idx<numColumns; idx++){
-        var className = ".inputCol"+(idx+1);
-        var elements = document.querySelectorAll(className);
-        elements.forEach(element => {
-            if(menuControlFlags[styleIndex].menuOptions[idx] == 1){
-                element.classList.remove('hidden');
-            } else {
-                element.classList.add('hidden');
-            }
-        });
-    }
-    
-}
 
 function readSourceImage(){
 
@@ -357,22 +192,36 @@ while (newImageContainer.firstChild) {
         pixelData = ctx.getImageData(0, 0, actualWidth, actualHeight);
         pixels = pixelData.data;
 
-        refresh();
+        analyseImage();
 
     };
   };
   reader.readAsDataURL(file);
-
   isImageLoaded = true;
 
 }
 
-function refresh(){
+function refreshCanvas(){
 
     console.log("refresh");
 
-    getUserInputs();
-    setTimeout(analyseImage,5);
+    if(playAnimationToggle==true){
+        playAnimationToggle = false;
+        cancelAnimationFrame(animationRequest);
+        console.log("cancel animation");
+    }//cancel any existing animation loops
+
+    playAnimationToggle = true;
+
+    canvas.width = actualWidth;
+    canvas.height = actualHeight;
+
+    canvas.scrollIntoView({behavior:"smooth"});
+
+    ctx.fillStyle = obj.backgroundColor;
+    ctx.fillRect(0,0,actualWidth,actualHeight);
+
+    startAnimation();
 
 }
 
@@ -386,88 +235,546 @@ function analyseImage(){
     lightDataArray = [];
     smoothedLightDataArray = [];
     keyPixelArray = [];
+    var lightDataArray = [];
 
-    if(visualizationChoice == "edgy"){
-        console.log("running edgy visual");
+    //generate data array for all pixel lightness values
+    for(var y=0; y < actualHeight; y++ ){
 
-        var lightDataArray = [];
+        lightDataArray[y] = [];
 
-        //generate data array for all pixel lightness values
-        for(var y=0; y < actualHeight; y++ ){
+        for(var x=0; x < actualWidth; x++ ){
 
-            lightDataArray[y] = [];
+            var actualPixel = (y * actualWidth + x) * 4;
+            var actualRed = pixels[actualPixel];
+            var actualGreen = pixels[actualPixel + 1];
+            var actualBlue = pixels[actualPixel + 2];
+            var actualLum = (0.2989 * actualRed + 0.5870 * actualGreen + 0.1140 * actualBlue)/255;
 
-            for(var x=0; x < actualWidth; x++ ){
+            lightDataArray[y][x] = actualLum;
 
-                var actualPixel = (y * actualWidth + x) * 4;
-                var actualRed = pixels[actualPixel];
-                var actualGreen = pixels[actualPixel + 1];
-                var actualBlue = pixels[actualPixel + 2];
-                //var actualLightness = rgbToLightness(actualRed, actualGreen, actualBlue);
-                var actualLum = (0.2989 * actualRed + 0.5870 * actualGreen + 0.1140 * actualBlue)/255;
-
-                lightDataArray[y][x] = actualLum;
-
-            }
         }
+    }
 
-        console.log("lightness data array filled");
+    console.log("lightness data array filled");
 
-        //gaussian smoothing function
-        var smoothedLightDataArray = []
-        var kernelWidth = 5;
-        var kernelHeight = kernelWidth;
-        var middlePixel = Math.floor(kernelWidth/2);
-        var kernelWeights = [0.003663004, 0.014652015, 0.025641026, 0.014652015, 0.003663004, 0.014652015, 0.058608059, 0.095238095, 0.058608059, 0.014652015, 0.025641026, 0.095238095, 0.15018315, 0.095238095, 0.025641026, 0.014652015, 0.058608059, 0.095238095, 0.058608059, 0.014652015, 0.003663004, 0.014652015, 0.025641026, 0.014652015, 0.003663004];
+    //gaussian smoothing function
+    var smoothedLightDataArray = []
+    var kernelWidth = 5;
+    var kernelHeight = kernelWidth;
+    var middlePixel = Math.floor(kernelWidth/2);
+    var kernelWeights = [0.003663004, 0.014652015, 0.025641026, 0.014652015, 0.003663004, 0.014652015, 0.058608059, 0.095238095, 0.058608059, 0.014652015, 0.025641026, 0.095238095, 0.15018315, 0.095238095, 0.025641026, 0.014652015, 0.058608059, 0.095238095, 0.058608059, 0.014652015, 0.003663004, 0.014652015, 0.025641026, 0.014652015, 0.003663004];
 
-        var threshold = 0.165 - (obj.edgeSensitivity/100 * 0.15);
+    var threshold = 0.165 - (obj.edgeSensitivity/100 * 0.16);
 
-        for(var y=0; y < actualHeight; y++ ){
-            smoothedLightDataArray[y] = [];
+    for(var y=0; y < actualHeight; y++ ){
+        smoothedLightDataArray[y] = [];
 
-            for(var x=0; x < actualWidth; x++ ){
-                
-                var kernelData = [];
+        for(var x=0; x < actualWidth; x++ ){
+            
+            var kernelData = [];
 
-                for(var kernelY=0; kernelY<kernelHeight; kernelY++){
-                    for(var kernelX=0; kernelX<kernelWidth; kernelX++){
-                        var pixelXPosition = x + (kernelX-middlePixel);
-                        var pixelYPosition = y + (kernelY-middlePixel);
-                        if(pixelXPosition >= 0 && pixelXPosition < actualWidth && pixelYPosition >= 0 && pixelYPosition < actualHeight){
-                            kernelData.push(lightDataArray[pixelYPosition][pixelXPosition]);
-                        }else{
-                            kernelData.push(0);
-                        }
+            for(var kernelY=0; kernelY<kernelHeight; kernelY++){
+                for(var kernelX=0; kernelX<kernelWidth; kernelX++){
+                    var pixelXPosition = x + (kernelX-middlePixel);
+                    var pixelYPosition = y + (kernelY-middlePixel);
+                    if(pixelXPosition >= 0 && pixelXPosition < actualWidth && pixelYPosition >= 0 && pixelYPosition < actualHeight){
+                        kernelData.push(lightDataArray[pixelYPosition][pixelXPosition]);
+                    }else{
+                        kernelData.push(0);
                     }
                 }
-
-                var weightedAverageLight = calcWeightedAverage(kernelData,kernelWeights);
-                smoothedLightDataArray[y][x] = weightedAverageLight;
-
-                if(x==0 || y==0 || x==actualWidth-1 || y==actualHeight-1){
-                    continue;
-                }
-
-                var lightValue = smoothedLightDataArray[y][x];
-                
-                var leftLight = smoothedLightDataArray[y][x-1];
-                var topLight = smoothedLightDataArray[y-1][x];
-                
-                var delta1 = Math.abs(lightValue - leftLight);
-                var delta2 = Math.abs(lightValue - topLight);
-
-                if(delta1 > threshold || delta2 > threshold){
-                    var keyPixel = [x, y];
-                    keyPixelArray.push(keyPixel);
-                }
-
             }
-        }
 
-        console.log("# key pixels: "+keyPixelArray.length);
-        drawPixels();
+            var weightedAverageLight = calcWeightedAverage(kernelData,kernelWeights);
+            smoothedLightDataArray[y][x] = weightedAverageLight;
+
+            if(x==0 || y==0 || x==actualWidth-1 || y==actualHeight-1){
+                continue;
+            }
+
+            var lightValue = smoothedLightDataArray[y][x];
+            
+            var leftLight = smoothedLightDataArray[y][x-1];
+            var topLight = smoothedLightDataArray[y-1][x];
+            
+            var delta1 = Math.abs(lightValue - leftLight);
+            var delta2 = Math.abs(lightValue - topLight);
+
+            if(delta1 > threshold || delta2 > threshold){
+                var keyPixel = [x, y];
+                keyPixelArray.push(keyPixel);
+            }
+
+        }
+    }
+
+    console.log("# key pixels: "+keyPixelArray.length);
+    //drawPixels();
+    refreshCanvas();
+    
+}
+
+function pausePlayAnimation(){
+    console.log("pause/play animation");
+    if(playAnimationToggle==true){
+        playAnimationToggle = false;
+        cancelAnimationFrame(animationRequest);
+        console.log("cancel animation");
+    } else {
+        startAnimation();
     }
 }
+
+function startAnimation(){
+    
+    console.log("start generative animation");
+    playAnimationToggle = true;
+    var keyPixelsPerFrame = 50;
+    var threshold = 0;
+    animationSpeed = 10; //larger values give slower animation
+    var counter = 0;
+    var pixelWidth = 2;
+    var pixelHeight = 2;
+
+    animationRequest = requestAnimationFrame(loop);
+    function loop(){
+
+        threshold = Math.pow( (Math.sin(counter/animationSpeed)+1)/2, 1);
+        if(obj.angle == 0 || obj.angle == 360){
+            xSlope = 1;
+            ySlope = 0;
+        } else if(obj.angle == 90){
+            xSlope = 0;
+            ySlope = 1;
+        } else if(obj.angle == 180){
+            xSlope = -1;
+            ySlope = 0;
+        } else if(obj.angle == 270) {
+            xSlope = 0;
+            ySlope = -1;
+        } else {
+            var slope = angleToSlope(obj.angle);
+            xSlope = slope.x;
+            ySlope = slope.y;
+        }
+
+        //select key pixels
+        for(var i=0; i<keyPixelsPerFrame; i++){
+            
+            var randomPixel;
+            if(i==0){
+                randomPixel = Math.floor(Math.random() * (keyPixelArray.length-1));
+            } else {
+                randomPixel = Math.min(keyPixelArray.length-1,randomPixel+1);
+            }
+            //var randomPixel = (counter+i) % keyPixelArray.length;
+            var x = keyPixelArray[randomPixel][0];
+            var y = keyPixelArray[randomPixel][1];
+
+            for(var j=0; j<obj.randomDots; j++){
+                //draw noise dots
+
+                if(Math.random() < threshold){
+                    //ctx.fillStyle = obj.noiseColor;
+                    ctx.fillStyle = "hsl("+(counter/animationSpeed%360)+","+Math.random()*100+"%,60%)";
+                } else {
+                    ctx.fillStyle = obj.backgroundColor;
+                }
+
+                ctx.globalAlpha = obj.noiseOpacity/100;
+                var currentShift = Math.pow(Math.random(),obj.power) * (obj.maxSmear/100 * actualWidth); 
+                var newX = x + currentShift * xSlope;
+                var newY = y - currentShift * ySlope; // y=0 starts at the top of the image
+                ctx.fillRect(newX,newY,1,1);
+
+            }
+
+            //draw edge
+            if(Math.random() < 1){
+                ctx.fillStyle = obj.edgeColor;
+                ctx.globalAlpha = 1;
+                ctx.fillRect(x,y,pixelWidth,pixelHeight);
+            } else {
+            }
+
+        }
+
+        counter++;
+        animationRequest = requestAnimationFrame(loop);
+    }
+
+}
+
+//Helper Functions
+
+function angleToSlope(angle) {
+    const radians = angle * Math.PI / 180;
+    const slope = Math.tan(radians);
+    return { x: 1, y: slope };
+}
+
+function angleToSlopeXY(angle) {
+    const slope = angleToSlope(angle);
+    return { x: slope.x, y: slope.y };
+}
+
+function saveImage(){
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL();
+  
+    const date = new Date();
+    const filename = `edgy_${date.toLocaleDateString()}_${date.toLocaleTimeString()}.png`;
+    link.download = filename;
+    link.click();
+}
+
+function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b };
+}
+
+function tweakHexColor(hexColor, range){
+    var rgbArray = hexToRgb(hexColor);
+
+    var newRGBArray = [];
+
+    newRGBArray.push(Math.floor(rgbArray[0]+range*Math.random()-range/2));
+    newRGBArray.push(Math.floor(rgbArray[1]+range*Math.random()-range/2));
+    newRGBArray.push(Math.floor(rgbArray[2]+range*Math.random()-range/2));
+
+    var newHexColor = rgbToHex(newRGBArray[0],newRGBArray[1],newRGBArray[2]);
+    return newHexColor;
+}
+
+function getHueFromHex(hex) {
+    const rgb = hexToRgb(hex);
+    const r = rgb.r / 255;
+    const g = rgb.g / 255;
+    const b = rgb.b / 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+
+    let hue = 0;
+
+    if (delta === 0) {
+        hue = 0;
+    } else if (max === r) {
+        hue = (g - b) / delta;
+    } else if (max === g) {
+        hue = 2 + (b - r) / delta;
+    } else {
+        hue = 4 + (r - g) / delta;
+    }
+
+    hue *= 60;
+    if (hue < 0) {
+        hue += 360;
+    }
+
+    return hue;
+}
+
+function rgbToHue(r, g, b) {
+    const rNorm = r / 255;
+    const gNorm = g / 255;
+    const bNorm = b / 255;
+    const hue = Math.atan2(Math.sqrt(3) * (gNorm - bNorm), 2 * rNorm - gNorm - bNorm);
+    return hue * 180 / Math.PI;
+    }
+
+function rgbToSaturation(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    return (max - min) / max;
+}
+
+function rgbToLightness(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    return (max + min) / 2 / 255;
+}
+
+function interpolateHex(hex1,hex2,factor){
+    hex1RGB = hexToRgb(hex1);
+    hex2RGB = hexToRgb(hex2);
+
+    var newR = Math.round(hex1RGB.r + (hex2RGB.r - hex1RGB.r)*factor);
+    var newG = Math.round(hex1RGB.g + (hex2RGB.g - hex1RGB.g)*factor);
+    var newB = Math.round(hex1RGB.b + (hex2RGB.b - hex1RGB.b)*factor);
+
+    var rgbResult = "rgb("+newR+","+newG+","+newB+")";
+    return rgbResult;
+}
+
+function rgbToHex(r, g, b) {
+    return "#" + (
+        (r.toString(16).padStart(2, "0")) +
+        (g.toString(16).padStart(2, "0")) +
+        (b.toString(16).padStart(2, "0"))
+    );
+}
+
+function toggleGUI(){
+    if(guiOpenToggle == false){
+        gui.open();
+        guiOpenToggle = true;
+    } else {
+        gui.close();
+        guiOpenToggle = false;
+    }
+}
+
+//shortcut hotkey presses
+document.addEventListener('keydown', function(event) {
+
+    if (event.key === 'r') {
+        refreshCanvas();
+    } else if (event.key === 's') {
+        saveImage();
+    } else if (event.key === 'v') {
+        toggleVideoRecord();
+    } else if (event.key === 'o') {
+        toggleGUI();
+    } else if(event.key === 'p'){
+        pausePlayAnimation();
+    }
+
+});
+  
+
+function calcWeightedAverage(data,weights){
+    var weightedAverage = 0;
+    for(var i=0; i<data.length; i++){
+        weightedAverage += data[i]*weights[i];
+    }
+    return weightedAverage;
+}
+
+function getAverageColor(chosenPixels) {
+    var r = 0;
+    var g = 0;
+    var b = 0;
+    var count = chosenPixels.length / 4;
+    for (let i = 0; i < count; i++) {
+        r += chosenPixels[i * 4];
+        g += chosenPixels[i * 4 + 1];
+        b += chosenPixels[i * 4 + 2];
+    }
+    return [r / count, g / count, b / count];
+}
+
+function resizeTable(){
+    const table = document.getElementById('imageTable'); 
+    // set the width of each column
+    table.getElementsByTagName('td')[0].style.width = `${scaledWidth}px`;
+    table.getElementsByTagName('td')[1].style.width = `${scaledWidth}px`;
+}
+
+function toggleVideoRecord(){
+    if(recordVideoState == false){
+      recordVideoState = true;
+      chooseRecordingFunction();
+    } else {
+      recordVideoState = false;
+      chooseEndRecordingFunction();
+    }
+}
+  
+function chooseRecordingFunction(){
+    if(isIOS || isAndroid || isFirefox){
+        startMobileRecording();
+    }else {
+        recordVideoMuxer();
+    }
+}
+  
+function chooseEndRecordingFunction(){
+        
+    if(isIOS || isAndroid || isFirefox){
+        mobileRecorder.stop();
+    }else {
+        finalizeVideo();
+    }
+    
+}
+  
+//record html canvas element and export as mp4 video
+//source: https://devtails.xyz/adam/how-to-save-html-canvas-to-mp4-using-web-codecs-api
+async function recordVideoMuxer() {
+    console.log("start muxer video recording");
+    var videoWidth = Math.floor(canvas.width/2)*2;
+    var videoHeight = Math.floor(canvas.height/8)*8; //force a number which is divisible by 8
+    console.log("Video dimensions: "+videoWidth+", "+videoHeight);
+  
+    //display user message
+    recordingMessageDiv.classList.remove("hidden");
+  
+    recordVideoState = true;
+    const ctx = canvas.getContext("2d", {
+      // This forces the use of a software (instead of hardware accelerated) 2D canvas
+      // This isn't necessary, but produces quicker results
+      willReadFrequently: true,
+      // Desynchronizes the canvas paint cycle from the event loop
+      // Should be less necessary with OffscreenCanvas, but with a real canvas you will want this
+      desynchronized: true,
+    });
+  
+    muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: {
+            // If you change this, make sure to change the VideoEncoder codec as well
+            codec: "avc",
+            width: videoWidth,
+            height: videoHeight,
+        },
+  
+        firstTimestampBehavior: 'offset', 
+  
+      // mp4-muxer docs claim you should always use this with ArrayBufferTarget
+      fastStart: "in-memory",
+    });
+  
+    videoEncoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => console.error(e),
+    });
+  
+    // This codec should work in most browsers
+    // See https://dmnsgn.github.io/media-codecs for list of codecs and see if your browser supports
+    videoEncoder.configure({
+      codec: "avc1.42003e",
+      width: videoWidth,
+      height: videoHeight,
+      bitrate: 6_000_000,
+      bitrateMode: "constant",
+    });
+    //NEW codec: "avc1.42003e",
+    //ORIGINAL codec: "avc1.42001f",
+  
+    refreshCanvas();
+    var frameNumber = 0;
+    //setTimeout(finalizeVideo,1000*videoDuration+200); //finish and export video after x seconds
+  
+    //take a snapshot of the canvas every x miliseconds and encode to video
+    videoRecordInterval = setInterval(
+        function(){
+            if(recordVideoState == true){
+                renderCanvasToVideoFrameAndEncode({
+                    canvas,
+                    videoEncoder,
+                    frameNumber,
+                    videofps
+                })
+                frameNumber++;
+            }else{
+            }
+        } , 1000/videofps);
+  
+}
+  
+//finish and export video
+async function finalizeVideo(){
+    console.log("finalize muxer video");
+    clearInterval(videoRecordInterval);
+    //playAnimationToggle = false;
+    recordVideoState = false;
+    
+    // Forces all pending encodes to complete
+    await videoEncoder.flush();
+    muxer.finalize();
+    let buffer = muxer.target.buffer;
+    finishedBlob = new Blob([buffer]); 
+    downloadBlob(new Blob([buffer]));
+  
+    //hide user message
+    recordingMessageDiv.classList.add("hidden");
+    
+}
+  
+async function renderCanvasToVideoFrameAndEncode({
+    canvas,
+    videoEncoder,
+    frameNumber,
+    videofps,
+  }) {
+    let frame = new VideoFrame(canvas, {
+        // Equally spaces frames out depending on frames per second
+        timestamp: (frameNumber * 1e6) / videofps,
+    });
+  
+    // The encode() method of the VideoEncoder interface asynchronously encodes a VideoFrame
+    videoEncoder.encode(frame);
+  
+    // The close() method of the VideoFrame interface clears all states and releases the reference to the media resource.
+    frame.close();
+}
+  
+function downloadBlob() {
+    console.log("download video");
+    let url = window.URL.createObjectURL(finishedBlob);
+    let a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    const date = new Date();
+    const filename = `edgy_${date.toLocaleDateString()}_${date.toLocaleTimeString()}.mp4`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+  
+//record and download videos on mobile devices
+function startMobileRecording(){
+    var stream = canvas.captureStream(videofps);
+    mobileRecorder = new MediaRecorder(stream, { 'type': 'video/mp4' });
+    mobileRecorder.addEventListener('dataavailable', finalizeMobileVideo);
+  
+    console.log("start simple video recording");
+    console.log("Video dimensions: "+canvas.width+", "+canvas.height);
+  
+    //display user message
+    //recordingMessageCountdown(videoDuration);
+    recordingMessageDiv.classList.remove("hidden");
+    
+    recordVideoState = true;
+    mobileRecorder.start(); //start mobile video recording
+  
+    /*
+    setTimeout(function() {
+        recorder.stop();
+    }, 1000*videoDuration+200);
+    */
+}
+  
+function finalizeMobileVideo(e) {
+    setTimeout(function(){
+        console.log("finish simple video recording");
+        recordVideoState = false;
+        /*
+        mobileRecorder.stop();*/
+        var videoData = [ e.data ];
+        finishedBlob = new Blob(videoData, { 'type': 'video/mp4' });
+        downloadBlob(finishedBlob);
+        
+        //hide user message
+        recordingMessageDiv.classList.add("hidden");
+  
+    },500);
+  
+}
+
+function randomWithinRange(value,range){
+    return value-range+Math.random()*range*2;
+}
+  
+
+
+
+/*
 
 function drawPixels(){
     console.log("start to draw new image");
@@ -495,9 +802,6 @@ function drawPixels(){
     var alpha = 1;
     var pixelWidth = 2;
     var pixelHeight = 2;
-
-    var xSlope;
-    var ySlope;
 
     if(obj.angle == 0 || obj.angle == 360){
         xSlope = 1;
@@ -547,242 +851,5 @@ function drawPixels(){
 
     resizeTable();
 
-    previousVisualizationChoice = visualizationChoice;
-
 }
-
-//Helper Functions
-
-function angleToSlope(angle) {
-    const radians = angle * Math.PI / 180;
-    const slope = Math.tan(radians);
-    return { x: 1, y: slope };
-}
-
-function angleToSlopeXY(angle) {
-    const slope = angleToSlope(angle);
-    return { x: slope.x, y: slope.y };
-}
-
-//shortcut key presses
-document.addEventListener('keydown', function(event) {
-    if (event.key === 'r') {
-        refresh();
-
-    } else if (event.key === 's') {
-        saveImage();
-    } else if (event.key === 'e') {
-        saveBothImages();
-    }
-});
-
-function saveImage(){
-    const image = newImageContainer.querySelector('img');
-    const imageUrl = image.src;
-    const link = document.createElement('a');
-    const date = new Date();
-    const filename = `image_${date.toLocaleDateString()}_${date.toLocaleTimeString()}.png`;
-    
-    // Create a blob from the image
-    fetch(imageUrl)
-        .then(response => response.blob())
-        .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        });
-
-}
-
-function saveBothImages(){
-
-    // Get the two images
-    const originalImage = imageContainer.querySelector('img');
-    const newImage = newImageContainer.querySelector('img');
-
-    // Create a canvas element
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
-    // Set the canvas dimensions to match the combined width of the two images
-    canvas.width = actualWidth*2;
-    canvas.height = actualHeight;
-    console.log("Save both images -- canvas width / height: "+canvas.width+", "+canvas.height);
-
-    // Draw the original image on the left side of the canvas
-    ctx.drawImage(originalImage, 0, 0, actualWidth, actualHeight);
-
-    // Draw the new image on the right side of the canvas
-    ctx.drawImage(newImage, actualWidth, 0, actualWidth, actualHeight);
-
-    // Use the canvas.toDataURL() method to generate a data URL for the combined image
-    const combinedImageURL = canvas.toDataURL();
-
-    const link = document.createElement('a');
-    const date = new Date();
-    const filename = `image_${date.toLocaleDateString()}_${date.toLocaleTimeString()}.png`;
-    
-    // Create a blob from the image
-    fetch(combinedImageURL)
-        .then(response => response.blob())
-        .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        link.click();
-        });
-
-}
-
-function rgbToHue(r, g, b) {
-    const rNorm = r / 255;
-    const gNorm = g / 255;
-    const bNorm = b / 255;
-    const hue = Math.atan2(Math.sqrt(3) * (gNorm - bNorm), 2 * rNorm - gNorm - bNorm);
-    return hue * 180 / Math.PI;
-}
-
-function rgbToSaturation(r, g, b) {
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    return (max - min) / max;
-}
-
-function rgbToLightness(r, g, b) {
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    return (max + min) / 2 / 255;
-}
-
-//returns random number between 0-1 based on normal distribution
-function randomBM() {
-    let u = 0, v = 0;
-    while(u === 0) u = Math.random(); //Converting [0,1) to (0,1)
-    while(v === 0) v = Math.random();
-    let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
-    num = num / 10.0 + 0.5; // Translate to 0 -> 1
-    if (num > 1 || num < 0) return randn_bm() // resample between 0 and 1
-    return num
-}
-
-function extractRGB(rgbString) {
-    const rgbRegex = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/;
-    const match = rgbString.match(rgbRegex);
-    if (match) {
-        return {
-        r: parseInt(match[1]),
-        g: parseInt(match[2]),
-        b: parseInt(match[3]),
-        };
-    } else {
-        return null;
-    }
-}
-
-function calcWeightedAverage(data,weights){
-    var weightedAverage = 0;
-    for(var i=0; i<data.length; i++){
-        weightedAverage += data[i]*weights[i];
-    }
-    return weightedAverage;
-}
-
-function getAverageColor(chosenPixels) {
-    var r = 0;
-    var g = 0;
-    var b = 0;
-    var count = chosenPixels.length / 4;
-    for (let i = 0; i < count; i++) {
-        r += chosenPixels[i * 4];
-        g += chosenPixels[i * 4 + 1];
-        b += chosenPixels[i * 4 + 2];
-    }
-    return [r / count, g / count, b / count];
-}
-
-function resizeTable(){
-    const table = document.getElementById('imageTable'); 
-    // set the width of each column
-    table.getElementsByTagName('td')[0].style.width = `${scaledWidth}px`;
-    table.getElementsByTagName('td')[1].style.width = `${scaledWidth}px`;
-}
-
-function hexToRgb(hex) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return { r, g, b };
-}
-
-
-
-function initColorPickers(){
-
-    colorPicker.addEventListener('change', (e) => {
-        updateColorPickers();
-    });
-
-    colorPicker2.addEventListener('change', (e) => {
-        updateColorPickers();
-    });
-
-    colorPicker3.addEventListener('change', (e) => {
-        updateColorPickers();
-    });
-
-    colorPicker4.addEventListener('change', (e) => {
-        updateColorPickers();
-    });
-
-    colorPicker5.addEventListener('change', (e) => {
-        updateColorPickers();
-    });
-
-    colorPicker6.addEventListener('change', (e) => {
-        updateColorPickers();
-    });
-
-    backgroundColorInput.addEventListener('change', (e) => {
-        refresh();
-    });    
-}
-
-function changePalette(){
-
-    paletteChoice = paletteChoiceInput.value;
-    
-    for (let idx = 0; idx < palettePresets.length; idx++){
-        if (palettePresets[idx].name == paletteChoice){
-            chosenPalette = palettePresets[idx].palette;
-            break;
-        }
-    }
-
-    for (let idx = 0; idx < pickers.length; idx++){
-        pickers[idx].value = chosenPalette[idx];
-    }
-    
-    updateColorPickers();    
-}
-
-function updateColorPickers(){
-
-    for (let idx = 0; idx < pickers.length; idx++){
-        var currentColor = pickers[idx].value;
-        chosenPalette[idx] = currentColor;
-        var currentColorRGB = hexToRgb(currentColor);
-        chosenPaletteRGBValues[idx] = [currentColorRGB.r, currentColorRGB.g, currentColorRGB.b];
-    }
-
-    //Modify and save changes to custom palette
-    var customIndex = palettePresets.findIndex(obj => obj.name === "custom");
-    console.log("Palette choice: "+paletteChoice);
-    if(paletteChoice == "custom"){
-        palettePresets[customIndex].palette = chosenPalette;
-    }
-
-    refresh();
-}
+*/
