@@ -3,9 +3,11 @@ Add wavy wind trails into the animation?
 Fix angle functionality -- currently in reverse at some quadrants
 Add option for subtle color variation
 Add to GUI: animation speed, pixel size, color variation style, key pixels per frame
-Bound the color variation by master hue / range?
+Bound the color variation by master hue / range? --add menu toggle option
 Press i to randomize gui inputs
 Randomize the smear width -- too uniform currently
+Resize input image to max 1080 width before analysing key pixels?
+Oscillate between drawing noise/edge color and background color (cycle switch every x frames)
 */
 
 var canvas = document.getElementById("canvas");
@@ -83,10 +85,11 @@ var obj = {
     edgeColor: "#ffffff",
     edgeSensitivity: 75,
     maxSmear: 35,
-    randomDots: 60,
-    noiseOpacity: 40,
-    power: 25,
+    randomDots: 70,
+    noiseOpacity: 80,
+    power: 15,
     angle: 0,
+    pixelsPerFrame: 100,
 };
 
 var xSlope;
@@ -108,8 +111,9 @@ gui.add(obj, "edgeSensitivity").min(1).max(100).step(1).name('Edge Sensitivity')
 gui.add(obj, "maxSmear").min(1).max(100).step(1).name('Smear Width')
 gui.add(obj, "randomDots").min(1).max(100).step(1).name('# Random Dots')
 gui.add(obj, "noiseOpacity").min(1).max(100).step(1).name('Dot Opacity')
-gui.add(obj, "power").min(1).max(100).step(1).name('Cluster Power')
-gui.add(obj, "angle").min(0).max(360).step(1).name('Angle')
+gui.add(obj, "power").min(1).max(50).step(1).name('Cluster Power')
+gui.add(obj, "angle").min(0).max(360).step(1).name('Angle').onFinishChange(calculateSlopes)
+gui.add(obj, "pixelsPerFrame").min(1).max(1000).step(1).name('Key Px Per Frame')
 
 obj['playAnimation'] = function () {
     pausePlayAnimation();
@@ -329,73 +333,84 @@ function startAnimation(){
     
     console.log("start generative animation");
     playAnimationToggle = true;
-    var keyPixelsPerFrame = 50;
     var threshold = 0;
-    animationSpeed = 10; //larger values give slower animation
+    animationSpeed = 5; //larger values give slower animation
     var counter = 0;
     var pixelWidth = 2;
     var pixelHeight = 2;
+    calculateSlopes();
 
     animationRequest = requestAnimationFrame(loop);
     function loop(){
 
-        threshold = Math.pow( (Math.sin(counter/animationSpeed)+1)/2, 1);
-        if(obj.angle == 0 || obj.angle == 360){
-            xSlope = 1;
-            ySlope = 0;
-        } else if(obj.angle == 90){
-            xSlope = 0;
-            ySlope = 1;
-        } else if(obj.angle == 180){
-            xSlope = -1;
-            ySlope = 0;
-        } else if(obj.angle == 270) {
-            xSlope = 0;
-            ySlope = -1;
-        } else {
-            var slope = angleToSlope(obj.angle);
-            xSlope = slope.x;
-            ySlope = slope.y;
-        }
-
+        //threshold = Math.min(0.6, (Math.sin(counter/animationSpeed)+1)/2) - 0.25 + Math.random()*0.5;
+        
         //select key pixels
-        for(var i=0; i<keyPixelsPerFrame; i++){
+        for(var i=0; i<obj.pixelsPerFrame; i++){
             
             var randomPixel;
+            /*
             if(i==0){
                 randomPixel = Math.floor(Math.random() * (keyPixelArray.length-1));
             } else {
                 randomPixel = Math.min(keyPixelArray.length-1,randomPixel+1);
             }
-            //var randomPixel = (counter+i) % keyPixelArray.length;
+            */
+            randomPixel = Math.floor(Math.random() * (keyPixelArray.length-1));
             var x = keyPixelArray[randomPixel][0];
             var y = keyPixelArray[randomPixel][1];
+
+            //var smearWidth = (obj.maxSmear/100 * actualWidth) * ( (Math.sin(counter/animationSpeed)+1)/2);
+            //var smearWidth = (obj.maxSmear/100 * actualWidth);
+            var smearWidth = (obj.maxSmear/100 * actualWidth) * ( (Math.sin(counter/600)+2)/2);
+            //var waveAmplitude = actualHeight*0.06 * Math.random();
 
             for(var j=0; j<obj.randomDots; j++){
                 //draw noise dots
 
-                if(Math.random() < threshold){
+                /*
+                if(threshold > 0.5){
                     //ctx.fillStyle = obj.noiseColor;
-                    ctx.fillStyle = "hsl("+(counter/animationSpeed%360)+","+Math.random()*100+"%,60%)";
+                    ctx.fillStyle = "hsl("+(counter/animationSpeed%360)+","+Math.random()*100+"%,"+Math.random()*100+"%)";
                 } else {
                     ctx.fillStyle = obj.backgroundColor;
                 }
+                */
+               if(Math.floor(counter/100) == 0 || Math.floor(counter/100)%5 == 0){
+                    //ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+","+Math.random()*100+"%,"+Math.random()*100+"%)";
+                    //ctx.fillStyle = obj.noiseColor;
+                    ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+",80%,50%)";
+                    ctx.globalAlpha = obj.noiseOpacity/100;
+                } else {
+                    ctx.fillStyle = obj.backgroundColor;
+                    ctx.globalAlpha = 1;
+                }
 
-                ctx.globalAlpha = obj.noiseOpacity/100;
-                var currentShift = Math.pow(Math.random(),obj.power) * (obj.maxSmear/100 * actualWidth); 
+                //ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+","+Math.random()*100+"%,"+Math.random()*100+"%)";
+                //ctx.globalAlpha = obj.noiseOpacity/100;
+                
+                var currentShift = Math.pow(Math.random(),obj.power) * smearWidth;
+                //var shiftRatio = currentShift / smearWidth; 
                 var newX = x + currentShift * xSlope;
-                var newY = y - currentShift * ySlope; // y=0 starts at the top of the image
+                //var newY = (y - (currentShift * ySlope))  + (waveAmplitude * Math.sin(shiftRatio * Math.PI*8)); // y=0 starts at the top of the image
+                var newY = (y - (currentShift * ySlope)); // y=0 starts at the top of the image
                 ctx.fillRect(newX,newY,1,1);
 
             }
 
             //draw edge
-            if(Math.random() < 1){
+
+            if(Math.floor(counter/100)%2 == 0){
                 ctx.fillStyle = obj.edgeColor;
-                ctx.globalAlpha = 1;
-                ctx.fillRect(x,y,pixelWidth,pixelHeight);
             } else {
+                //ctx.fillStyle = obj.backgroundColor;
+                //ctx.fillStyle = "red";
+                ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+",80%,50%)";
             }
+
+            //ctx.fillStyle = obj.edgeColor;
+            ctx.globalAlpha = 1;
+            ctx.fillRect(x,y,pixelWidth,pixelHeight);
 
         }
 
@@ -406,6 +421,26 @@ function startAnimation(){
 }
 
 //Helper Functions
+
+function calculateSlopes(){
+    if(obj.angle == 0 || obj.angle == 360){
+        xSlope = 1;
+        ySlope = 0;
+    } else if(obj.angle == 90){
+        xSlope = 0;
+        ySlope = 1;
+    } else if(obj.angle == 180){
+        xSlope = -1;
+        ySlope = 0;
+    } else if(obj.angle == 270) {
+        xSlope = 0;
+        ySlope = -1;
+    } else {
+        var slope = angleToSlope(obj.angle);
+        xSlope = slope.x;
+        ySlope = slope.y;
+    }
+}
 
 function angleToSlope(angle) {
     const radians = angle * Math.PI / 180;
