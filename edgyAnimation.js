@@ -1,13 +1,9 @@
 /*To do:
 Add wavy wind trails into the animation?
 Fix angle functionality -- currently in reverse at some quadrants
-Add option for subtle color variation
-Add to GUI: animation speed, pixel size, color variation style, key pixels per frame
-Bound the color variation by master hue / range? --add menu toggle option
+Add to GUI: animation speed, pixel size, color variation style
 Press i to randomize gui inputs
 Randomize the smear width -- too uniform currently
-Resize input image to max 1080 width before analysing key pixels?
-Oscillate between drawing noise/edge color and background color (cycle switch every x frames)
 */
 
 var canvas = document.getElementById("canvas");
@@ -29,8 +25,8 @@ var originalImage;
 var isImageLoaded = false;
 
 var screenWidth = window.innerWidth; // get the width of the browser screen
-var maxImageWidth = (screenWidth*0.96) / 2; // max width for each of the two images
-var maxImageHeight = window.innerHeight * 0.78;
+var maxImageWidth = 1080; // max width for each of the two images
+var maxImageHeight = 1920;
 console.log("max image dimensions: "+maxImageWidth+", "+maxImageHeight);
 
 var actualWidth;
@@ -82,6 +78,7 @@ var videofps = 30;
 var obj = {
     backgroundColor: "#000000",
     noiseColor: "#0011FF",
+    hueRange: 90,
     edgeColor: "#ffffff",
     edgeSensitivity: 75,
     maxSmear: 35,
@@ -100,12 +97,13 @@ var gui = new dat.gui.GUI( { autoPlace: false } );
 var guiOpenToggle = true;
 
 obj['importImage'] = function () {
-imageInput.click();
+    imageInput.click();
 };
 gui.add(obj, 'importImage').name("Import Image");
 
 gui.addColor(obj, "backgroundColor").name("Background Color")
 gui.addColor(obj, "noiseColor").name("Noise Color")
+gui.add(obj, "hueRange").min(0).max(180).step(1).name('Noise Hue Range');
 gui.addColor(obj, "edgeColor").name("Edge Color")
 gui.add(obj, "edgeSensitivity").min(1).max(100).step(1).name('Edge Sensitivity').onFinishChange(analyseImage);
 gui.add(obj, "maxSmear").min(1).max(100).step(1).name('Smear Width')
@@ -126,12 +124,12 @@ obj['refreshCanvas'] = function () {
 gui.add(obj, 'refreshCanvas').name("Refresh Canvas (r)");
 
 obj['saveImage'] = function () {
-saveImage();
+    saveImage();
 };
 gui.add(obj, 'saveImage').name("Save Image (s)");
 
 obj['saveVideo'] = function () {
-toggleVideoRecord();
+    toggleVideoRecord();
 };
 gui.add(obj, 'saveVideo').name("Video Export (v)");
 
@@ -168,7 +166,7 @@ while (newImageContainer.firstChild) {
         if(actualWidth >= maxImageWidth){
             scaledWidth = maxImageWidth;
         } else{
-            scaledWidth = Math.min(maxImageWidth,actualWidth*2);
+            scaledWidth = Math.min(maxImageWidth,actualWidth);
         }
 
         widthScalingRatio = scaledWidth / actualWidth;
@@ -181,19 +179,22 @@ while (newImageContainer.firstChild) {
             scaledHeight = actualHeight * widthScalingRatio;
         }
 
+        /*
         var originalImg = document.createElement('img');
         originalImg.src = imageData;
         originalImg.width = scaledWidth;
         originalImg.height = scaledHeight;
         imageContainer.appendChild(originalImg);
+        */
 
         // Get the pixel colors
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = actualWidth;
-        canvas.height = actualHeight;
-        ctx.drawImage(image, 0, 0);
-        pixelData = ctx.getImageData(0, 0, actualWidth, actualHeight);
+        canvas.width = scaledWidth;
+        canvas.height = scaledHeight;
+        //ctx.drawImage(image, 0, 0);
+        ctx.drawImage(image, 0, 0, scaledWidth, scaledHeight);
+        pixelData = ctx.getImageData(0, 0, scaledWidth, scaledHeight);
         pixels = pixelData.data;
 
         analyseImage();
@@ -217,13 +218,13 @@ function refreshCanvas(){
 
     playAnimationToggle = true;
 
-    canvas.width = actualWidth;
-    canvas.height = actualHeight;
+    canvas.width = scaledWidth;
+    canvas.height = scaledHeight;
 
     canvas.scrollIntoView({behavior:"smooth"});
 
     ctx.fillStyle = obj.backgroundColor;
-    ctx.fillRect(0,0,actualWidth,actualHeight);
+    ctx.fillRect(0,0,scaledWidth,scaledHeight);
 
     startAnimation();
 
@@ -242,13 +243,13 @@ function analyseImage(){
     var lightDataArray = [];
 
     //generate data array for all pixel lightness values
-    for(var y=0; y < actualHeight; y++ ){
+    for(var y=0; y < scaledHeight; y++ ){
 
         lightDataArray[y] = [];
 
-        for(var x=0; x < actualWidth; x++ ){
+        for(var x=0; x < scaledWidth; x++ ){
 
-            var actualPixel = (y * actualWidth + x) * 4;
+            var actualPixel = (y * scaledWidth + x) * 4;
             var actualRed = pixels[actualPixel];
             var actualGreen = pixels[actualPixel + 1];
             var actualBlue = pixels[actualPixel + 2];
@@ -270,10 +271,10 @@ function analyseImage(){
 
     var threshold = 0.165 - (obj.edgeSensitivity/100 * 0.16);
 
-    for(var y=0; y < actualHeight; y++ ){
+    for(var y=0; y < scaledHeight; y++ ){
         smoothedLightDataArray[y] = [];
 
-        for(var x=0; x < actualWidth; x++ ){
+        for(var x=0; x < scaledWidth; x++ ){
             
             var kernelData = [];
 
@@ -281,7 +282,7 @@ function analyseImage(){
                 for(var kernelX=0; kernelX<kernelWidth; kernelX++){
                     var pixelXPosition = x + (kernelX-middlePixel);
                     var pixelYPosition = y + (kernelY-middlePixel);
-                    if(pixelXPosition >= 0 && pixelXPosition < actualWidth && pixelYPosition >= 0 && pixelYPosition < actualHeight){
+                    if(pixelXPosition >= 0 && pixelXPosition < scaledWidth && pixelYPosition >= 0 && pixelYPosition < scaledHeight){
                         kernelData.push(lightDataArray[pixelYPosition][pixelXPosition]);
                     }else{
                         kernelData.push(0);
@@ -292,7 +293,7 @@ function analyseImage(){
             var weightedAverageLight = calcWeightedAverage(kernelData,kernelWeights);
             smoothedLightDataArray[y][x] = weightedAverageLight;
 
-            if(x==0 || y==0 || x==actualWidth-1 || y==actualHeight-1){
+            if(x==0 || y==0 || x==scaledWidth-1 || y==scaledHeight-1){
                 continue;
             }
 
@@ -343,47 +344,31 @@ function startAnimation(){
     animationRequest = requestAnimationFrame(loop);
     function loop(){
 
+        var startingHue = getHueFromHex(obj.noiseColor);
         //threshold = Math.min(0.6, (Math.sin(counter/animationSpeed)+1)/2) - 0.25 + Math.random()*0.5;
         
         //select key pixels
         for(var i=0; i<obj.pixelsPerFrame; i++){
             
             var randomPixel;
-            /*
-            if(i==0){
-                randomPixel = Math.floor(Math.random() * (keyPixelArray.length-1));
-            } else {
-                randomPixel = Math.min(keyPixelArray.length-1,randomPixel+1);
-            }
-            */
             randomPixel = Math.floor(Math.random() * (keyPixelArray.length-1));
             var x = keyPixelArray[randomPixel][0];
             var y = keyPixelArray[randomPixel][1];
 
             //var smearWidth = (obj.maxSmear/100 * actualWidth) * ( (Math.sin(counter/animationSpeed)+1)/2);
             //var smearWidth = (obj.maxSmear/100 * actualWidth);
-            var smearWidth = (obj.maxSmear/100 * actualWidth) * ( (Math.sin(counter/600)+2)/2);
+            var smearWidth = (obj.maxSmear/100 * scaledWidth) * ( (Math.sin(counter/600)+2)/2);
             //var waveAmplitude = actualHeight*0.06 * Math.random();
 
             for(var j=0; j<obj.randomDots; j++){
                 //draw noise dots
 
-                /*
-                if(threshold > 0.5){
-                    //ctx.fillStyle = obj.noiseColor;
-                    ctx.fillStyle = "hsl("+(counter/animationSpeed%360)+","+Math.random()*100+"%,"+Math.random()*100+"%)";
-                } else {
-                    ctx.fillStyle = obj.backgroundColor;
-                }
-                */
-               if(Math.floor(counter/100) == 0 || Math.floor(counter/100)%5 == 0){
-                    //ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+","+Math.random()*100+"%,"+Math.random()*100+"%)";
-                    //ctx.fillStyle = obj.noiseColor;
-                    ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+",80%,50%)";
-                    ctx.globalAlpha = obj.noiseOpacity/100;
-                } else {
+               if(Math.floor(counter/100)%3 != 0 || Math.floor(counter/100) == 0){
                     ctx.fillStyle = obj.backgroundColor;
                     ctx.globalAlpha = 1;
+                } else {
+                    ctx.fillStyle = "hsl("+(startingHue+Math.sin(counter/100)*obj.hueRange)+",90%,50%)";
+                    ctx.globalAlpha = obj.noiseOpacity/100;
                 }
 
                 //ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+","+Math.random()*100+"%,"+Math.random()*100+"%)";
@@ -400,15 +385,16 @@ function startAnimation(){
 
             //draw edge
 
-            if(Math.floor(counter/100)%2 == 0){
+            if(Math.random()<0.5){
                 ctx.fillStyle = obj.edgeColor;
             } else {
                 //ctx.fillStyle = obj.backgroundColor;
                 //ctx.fillStyle = "red";
-                ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+",80%,50%)";
+                //ctx.fillStyle = "hsl("+(counter*2/animationSpeed%360)+",80%,50%)";
+                ctx.fillStyle = "hsl("+(startingHue+Math.sin(counter/100)*obj.hueRange)+",90%,50%)";
+
             }
 
-            //ctx.fillStyle = obj.edgeColor;
             ctx.globalAlpha = 1;
             ctx.fillRect(x,y,pixelWidth,pixelHeight);
 
